@@ -1,389 +1,229 @@
+// Ensure the 'Foundation' module is initialized
 Module.ensureInitialized('Foundation');
 
-var O_RDONLY = 0;
-var O_WRONLY = 1;
-var O_RDWR = 2;
-var O_CREAT = 512;
+// Constants for file operations and memory operations
+const O_RDONLY = 0;
+const O_WRONLY = 1;
+const O_RDWR = 2;
+const O_CREAT = 512;
+const SEEK_SET = 0;
+const SEEK_CUR = 1;
+const SEEK_END = 2;
 
-var SEEK_SET = 0;
-var SEEK_CUR = 1;
-var SEEK_END = 2;
+const FAT_MAGIC = 0xcafebabe;
+const FAT_CIGAM = 0xbebafeca;
+const MH_MAGIC = 0xfeedface;
+const MH_CIGAM = 0xcefaedfe;
+const MH_MAGIC_64 = 0xfeedfacf;
+const MH_CIGAM_64 = 0xcffaedfe;
+const LC_SEGMENT = 0x1;
+const LC_SEGMENT_64 = 0x19;
+const LC_ENCRYPTION_INFO = 0x21;
+const LC_ENCRYPTION_INFO_64 = 0x2C;
 
-function allocStr(str) {
-    return Memory.allocUtf8String(str);
-}
+// Utility functions for memory operations
+const memoryUtils = {
+    allocStr: (str) => Memory.allocUtf8String(str),
+    putStr: (addr, str) => Memory.writeUtf8String(ptr(addr), str),
+    getByteArr: (addr, length) => Memory.readByteArray(ptr(addr), length),
+    getU8: (addr) => Memory.readU8(ptr(addr)),
+    putU8: (addr, val) => Memory.writeU8(ptr(addr), val),
+    getU16: (addr) => Memory.readU16(ptr(addr)),
+    putU16: (addr, val) => Memory.writeU16(ptr(addr), val),
+    getU32: (addr) => Memory.readU32(ptr(addr)),
+    putU32: (addr, val) => Memory.writeU32(ptr(addr), val),
+    getU64: (addr) => Memory.readU64(ptr(addr)),
+    putU64: (addr, val) => Memory.writeU64(ptr(addr), val),
+    getPtr: (addr) => Memory.readPointer(ptr(addr)),
+    putPtr: (addr, val) => Memory.writePointer(ptr(addr), ptr(val)),
+    malloc: (size) => Memory.alloc(size),
+    swap32: (value) => parseInt(value.toString(16).padStart(8, '0').match(/../g).reverse().join(''), 16),
+};
 
-function putStr(addr, str) {
-    if (typeof addr == "number") {
-        addr = ptr(addr);
-    }
-    return Memory.writeUtf8String(addr, str);
-}
-
-function getByteArr(addr, l) {
-    if (typeof addr == "number") {
-        addr = ptr(addr);
-    }
-    return Memory.readByteArray(addr, l);
-}
-
-function getU8(addr) {
-    if (typeof addr == "number") {
-        addr = ptr(addr);
-    }
-    return Memory.readU8(addr);
-}
-
-function putU8(addr, n) {
-    if (typeof addr == "number") {
-        addr = ptr(addr);
-    }
-    return Memory.writeU8(addr, n);
-}
-
-function getU16(addr) {
-    if (typeof addr == "number") {
-        addr = ptr(addr);
-    }
-    return Memory.readU16(addr);
-}
-
-function putU16(addr, n) {
-    if (typeof addr == "number") {
-        addr = ptr(addr);
-    }
-    return Memory.writeU16(addr, n);
-}
-
-function getU32(addr) {
-    if (typeof addr == "number") {
-        addr = ptr(addr);
-    }
-    return Memory.readU32(addr);
-}
-
-function putU32(addr, n) {
-    if (typeof addr == "number") {
-        addr = ptr(addr);
-    }
-    return Memory.writeU32(addr, n);
-}
-
-function getU64(addr) {
-    if (typeof addr == "number") {
-        addr = ptr(addr);
-    }
-    return Memory.readU64(addr);
-}
-
-function putU64(addr, n) {
-    if (typeof addr == "number") {
-        addr = ptr(addr);
-    }
-    return Memory.writeU64(addr, n);
-}
-
-function getPt(addr) {
-    if (typeof addr == "number") {
-        addr = ptr(addr);
-    }
-    return Memory.readPointer(addr);
-}
-
-function putPt(addr, n) {
-    if (typeof addr == "number") {
-        addr = ptr(addr);
-    }
-    if (typeof n == "number") {
-        n = ptr(n);
-    }
-    return Memory.writePointer(addr, n);
-}
-
-function malloc(size) {
-    return Memory.alloc(size);
-}
-
-function getExportFunction(type, name, ret, args) {
-    var nptr;
-    nptr = Module.findExportByName(null, name);
-    if (nptr === null) {
-        console.log("cannot find " + name);
+// Function to get exported function or data
+const getExport = (type, name, ret, args) => {
+    const nptr = Module.findExportByName(null, name);
+    if (!nptr) {
+        console.error(`Cannot find ${name}`);
         return null;
-    } else {
-        if (type === "f") {
-            var funclet = new NativeFunction(nptr, ret, args);
-            if (typeof funclet === "undefined") {
-                console.log("parse error " + name);
-                return null;
-            }
-            return funclet;
-        } else if (type === "d") {
-            var datalet = Memory.readPointer(nptr);
-            if (typeof datalet === "undefined") {
-                console.log("parse error " + name);
-                return null;
-            }
-            return datalet;
-        }
     }
-}
+    return type === 'f' ? new NativeFunction(nptr, ret, args) : Memory.readPointer(nptr);
+};
 
-var NSSearchPathForDirectoriesInDomains = getExportFunction("f", "NSSearchPathForDirectoriesInDomains", "pointer", ["int", "int", "int"]);
-var wrapper_open = getExportFunction("f", "open", "int", ["pointer", "int", "int"]);
-var read = getExportFunction("f", "read", "int", ["int", "pointer", "int"]);
-var write = getExportFunction("f", "write", "int", ["int", "pointer", "int"]);
-var lseek = getExportFunction("f", "lseek", "int64", ["int", "int64", "int"]);
-var close = getExportFunction("f", "close", "int", ["int"]);
-var remove = getExportFunction("f", "remove", "int", ["pointer"]);
-var access = getExportFunction("f", "access", "int", ["pointer", "int"]);
-var dlopen = getExportFunction("f", "dlopen", "pointer", ["pointer", "int"]);
+// Get various system functions
+const NSSearchPathForDirectoriesInDomains = getExport("f", "NSSearchPathForDirectoriesInDomains", "pointer", ["int", "int", "int"]);
+const openFile = getExport("f", "open", "int", ["pointer", "int", "int"]);
+const readFile = getExport("f", "read", "int", ["int", "pointer", "int"]);
+const writeFile = getExport("f", "write", "int", ["int", "pointer", "int"]);
+const lseekFile = getExport("f", "lseek", "int64", ["int", "int64", "int"]);
+const closeFile = getExport("f", "close", "int", ["int"]);
+const removeFile = getExport("f", "remove", "int", ["pointer"]);
+const accessFile = getExport("f", "access", "int", ["pointer", "int"]);
+const dlopenLib = getExport("f", "dlopen", "pointer", ["pointer", "int"]);
 
-function getDocumentDir() {
-    var NSDocumentDirectory = 9;
-    var NSUserDomainMask = 1;
-    var npdirs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, 1);
+// Function to get document directory path
+const getDocumentDir = () => {
+    const NSDocumentDirectory = 9;
+    const NSUserDomainMask = 1;
+    const npdirs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, 1);
     return ObjC.Object(npdirs).objectAtIndex_(0).toString();
-}
+};
 
-function open(pathname, flags, mode) {
-    if (typeof pathname == "string") {
-        pathname = allocStr(pathname);
-    }
-    return wrapper_open(pathname, flags, mode);
-}
+// Function to open a file with error handling
+const open = (pathname, flags, mode) => {
+    const pathPtr = typeof pathname === 'string' ? memoryUtils.allocStr(pathname) : pathname;
+    return openFile(pathPtr, flags, mode);
+};
 
-var modules = null;
-function getAllAppModules() {
-    modules = new Array();
-    var tmpmods = Process.enumerateModulesSync();
-    for (var i = 0; i < tmpmods.length; i++) {
-        if (tmpmods[i].path.indexOf(".app") != -1) {
-            modules.push(tmpmods[i]);
-        }
-    }
-    return modules;
-}
+// Function to get all application modules
+const getAllAppModules = () => {
+    return Process.enumerateModulesSync().filter(mod => mod.path.includes('.app'));
+};
 
-var FAT_MAGIC = 0xcafebabe;
-var FAT_CIGAM = 0xbebafeca;
-var MH_MAGIC = 0xfeedface;
-var MH_CIGAM = 0xcefaedfe;
-var MH_MAGIC_64 = 0xfeedfacf;
-var MH_CIGAM_64 = 0xcffaedfe;
-var LC_SEGMENT = 0x1;
-var LC_SEGMENT_64 = 0x19;
-var LC_ENCRYPTION_INFO = 0x21;
-var LC_ENCRYPTION_INFO_64 = 0x2C;
-
-function pad(str, n) {
-    return Array(n-str.length+1).join("0")+str;
-}
-
-function swap32(value) {
-    value = pad(value.toString(16),8)
-    var result = "";
-    for(var i = 0; i < value.length; i=i+2){
-        result += value.charAt(value.length - i - 2);
-        result += value.charAt(value.length - i - 1);
-    }
-    return parseInt(result,16)
-}
-
-function dumpModule(name) {
-    if (modules == null) {
-        modules = getAllAppModules();
+// Function to dump a module
+const dumpModule = (moduleName) => {
+    const modules = getAllAppModules();
+    const targetModule = modules.find(mod => mod.path.includes(moduleName));
+    if (!targetModule) {
+        console.error("Cannot find module");
+        return null;
     }
 
-    var targetmod = null;
-    for (var i = 0; i < modules.length; i++) {
-        if (modules[i].path.indexOf(name) != -1) {
-            targetmod = modules[i];
-            break;
-        }
-    }
-    if (targetmod == null) {
-        console.log("Cannot find module");
-        return;
-    }
-    var modbase = modules[i].base;
-    var modsize = modules[i].size;
-    var newmodname = modules[i].name;
-    var newmodpath = getDocumentDir() + "/" + newmodname + ".fid";
-    var oldmodpath = modules[i].path;
+    const { base: modBase, size: modSize, name: modName, path: oldModPath } = targetModule;
+    const newModPath = `${getDocumentDir()}/${modName}.fid`;
 
-
-    if(!access(allocStr(newmodpath),0)){
-        remove(allocStr(newmodpath));
+    if (!accessFile(memoryUtils.allocStr(newModPath), 0)) {
+        removeFile(memoryUtils.allocStr(newModPath));
     }
 
-    var fmodule = open(newmodpath, O_CREAT | O_RDWR, 0);
-    var foldmodule = open(oldmodpath, O_RDONLY, 0);
+    const fmodule = open(newModPath, O_CREAT | O_RDWR, 0);
+    const foldModule = open(oldModPath, O_RDONLY, 0);
 
-    if (fmodule == -1 || foldmodule == -1) {
-        console.log("Cannot open file" + newmodpath);
-        return;
+    if (fmodule === -1 || foldModule === -1) {
+        console.error(`Cannot open file ${newModPath}`);
+        return null;
     }
 
-    var is64bit = false;
-    var size_of_mach_header = 0;
-    var magic = getU32(modbase);
-    var cur_cpu_type = getU32(modbase.add(4));
-    var cur_cpu_subtype = getU32(modbase.add(8));
-    if (magic == MH_MAGIC || magic == MH_CIGAM) {
-        is64bit = false;
-        size_of_mach_header = 28;
-    }else if (magic == MH_MAGIC_64 || magic == MH_CIGAM_64) {
-        is64bit = true;
-        size_of_mach_header = 32;
+    const BUFSIZE = 4096;
+    const buffer = memoryUtils.malloc(BUFSIZE);
+    readFile(foldModule, buffer, BUFSIZE);
+
+    const magic = memoryUtils.getU32(modBase);
+    const curCpuType = memoryUtils.getU32(modBase.add(4));
+    const curCpuSubType = memoryUtils.getU32(modBase.add(8));
+
+    let is64Bit = false;
+    let sizeOfMachHeader = 0;
+    if ([MH_MAGIC, MH_CIGAM].includes(magic)) {
+        is64Bit = false;
+        sizeOfMachHeader = 28;
+    } else if ([MH_MAGIC_64, MH_CIGAM_64].includes(magic)) {
+        is64Bit = true;
+        sizeOfMachHeader = 32;
     }
 
-    var BUFSIZE = 4096;
-    var buffer = malloc(BUFSIZE);
-
-    read(foldmodule, buffer, BUFSIZE);
-
-    var fileoffset = 0;
-    var filesize = 0;
-    magic = getU32(buffer);
-    if(magic == FAT_CIGAM || magic == FAT_MAGIC){
-        var off = 4;
-        var archs = swap32(getU32(buffer.add(off)));
-        for (var i = 0; i < archs; i++) {
-            var cputype = swap32(getU32(buffer.add(off + 4)));
-            var cpusubtype = swap32(getU32(buffer.add(off + 8)));
-            if(cur_cpu_type == cputype && cur_cpu_subtype == cpusubtype){
-                fileoffset = swap32(getU32(buffer.add(off + 12)));
-                filesize = swap32(getU32(buffer.add(off + 16)));
+    let fileOffset = 0;
+    let fileSize = 0;
+    if ([FAT_MAGIC, FAT_CIGAM].includes(memoryUtils.getU32(buffer))) {
+        const archs = memoryUtils.swap32(memoryUtils.getU32(buffer.add(4)));
+        for (let i = 0; i < archs; i++) {
+            const cputype = memoryUtils.swap32(memoryUtils.getU32(buffer.add(8 + 20 * i)));
+            const cpusubtype = memoryUtils.swap32(memoryUtils.getU32(buffer.add(12 + 20 * i)));
+            if (curCpuType === cputype && curCpuSubType === cpusubtype) {
+                fileOffset = memoryUtils.swap32(memoryUtils.getU32(buffer.add(16 + 20 * i)));
+                fileSize = memoryUtils.swap32(memoryUtils.getU32(buffer.add(20 + 20 * i)));
                 break;
             }
-            off += 20;
         }
+        if (!fileOffset || !fileSize) return null;
 
-        if(fileoffset == 0 || filesize == 0)
-            return;
-
-        lseek(fmodule, 0, SEEK_SET);
-        lseek(foldmodule, fileoffset, SEEK_SET);
-        for(var i = 0; i < parseInt(filesize / BUFSIZE); i++) {
-            read(foldmodule, buffer, BUFSIZE);
-            write(fmodule, buffer, BUFSIZE);
+        lseekFile(fmodule, 0, SEEK_SET);
+        lseekFile(foldModule, fileOffset, SEEK_SET);
+        for (let i = 0; i < Math.floor(fileSize / BUFSIZE); i++) {
+            readFile(foldModule, buffer, BUFSIZE);
+            writeFile(fmodule, buffer, BUFSIZE);
         }
-        if(filesize % BUFSIZE){
-            read(foldmodule, buffer, filesize % BUFSIZE);
-            write(fmodule, buffer, filesize % BUFSIZE);
+        if (fileSize % BUFSIZE) {
+            readFile(foldModule, buffer, fileSize % BUFSIZE);
+            writeFile(fmodule, buffer, fileSize % BUFSIZE);
         }
-    }else{
-        var readLen = 0;
-        lseek(foldmodule, 0, SEEK_SET);
-        lseek(fmodule, 0, SEEK_SET);
-        while(readLen = read(foldmodule, buffer, BUFSIZE)) {
-            write(fmodule, buffer, readLen);
+    } else {
+        lseekFile(foldModule, 0, SEEK_SET);
+        lseekFile(fmodule, 0, SEEK_SET);
+        let readLen = 0;
+        while (readLen = readFile(foldModule, buffer, BUFSIZE)) {
+            writeFile(fmodule, buffer, readLen);
         }
     }
 
-    var ncmds = getU32(modbase.add(16));
-    var off = size_of_mach_header;
-    var offset_cryptid = -1;
-    var crypt_off = 0;
-    var crypt_size = 0;
-    var segments = [];
-    for (var i = 0; i < ncmds; i++) {
-        var cmd = getU32(modbase.add(off));
-        var cmdsize = getU32(modbase.add(off + 4));
-        if (cmd == LC_ENCRYPTION_INFO || cmd == LC_ENCRYPTION_INFO_64) {
-            offset_cryptid = off + 16;
-            crypt_off = getU32(modbase.add(off + 8));
-            crypt_size = getU32(modbase.add(off + 12));
+    const ncmds = memoryUtils.getU32(modBase.add(16));
+    let offsetCryptId = -1;
+    let cryptOff = 0;
+    let cryptSize = 0;
+    let off = sizeOfMachHeader;
+
+    for (let i = 0; i < ncmds; i++) {
+        const cmd = memoryUtils.getU32(modBase.add(off));
+        const cmdSize = memoryUtils.getU32(modBase.add(off + 4));
+        if ([LC_ENCRYPTION_INFO, LC_ENCRYPTION_INFO_64].includes(cmd)) {
+            offsetCryptId = off + 16;
+            cryptOff = memoryUtils.getU32(modBase.add(off + 8));
+            cryptSize = memoryUtils.getU32(modBase.add(off + 12));
         }
-        off += cmdsize;
+        off += cmdSize;
     }
 
-    if (offset_cryptid != -1) {
-        var tpbuf = malloc(8);
-        putU64(tpbuf, 0);
-        lseek(fmodule, offset_cryptid, SEEK_SET);
-        write(fmodule, tpbuf, 4);
-        lseek(fmodule, crypt_off, SEEK_SET);
-        write(fmodule, modbase.add(crypt_off), crypt_size);
+    if (offsetCryptId === -1) {
+        closeFile(fmodule);
+        closeFile(foldModule);
+        return;
     }
 
-    close(fmodule);
-    close(foldmodule);
-    return newmodpath
-}
+    lseekFile(fmodule, offsetCryptId, SEEK_SET);
+    writeFile(fmodule, memoryUtils.allocStr("\x00\x00\x00\x00"), 4);
+    lseekFile(fmodule, cryptOff, SEEK_SET);
+    lseekFile(foldModule, modBase.add(cryptOff).sub(modBase), SEEK_SET);
 
-function loadAllDynamicLibrary(app_path) {
-    var defaultManager = ObjC.classes.NSFileManager.defaultManager();
-    var errorPtr = Memory.alloc(Process.pointerSize); 
-    Memory.writePointer(errorPtr, NULL); 
-    var filenames = defaultManager.contentsOfDirectoryAtPath_error_(app_path, errorPtr);
-    for (var i = 0, l = filenames.count(); i < l; i++) {
-        var file_name = filenames.objectAtIndex_(i);
-        var file_path = app_path.stringByAppendingPathComponent_(file_name);
-        if (file_name.hasSuffix_(".framework")) {
-            var bundle = ObjC.classes.NSBundle.bundleWithPath_(file_path);
-            if (bundle.isLoaded()) {
-                console.log("[frida-ios-dump]: " + file_name + " has been loaded. ");
-            } else {
-                if (bundle.load()) {
-                    console.log("[frida-ios-dump]: Load " + file_name + " success. ");
-                } else {
-                    console.log("[frida-ios-dump]: Load " + file_name + " failed. ");
-                }
-            }
-        } else if (file_name.hasSuffix_(".bundle") || 
-                   file_name.hasSuffix_(".momd") ||
-                   file_name.hasSuffix_(".strings") ||
-                   file_name.hasSuffix_(".appex") ||
-                   file_name.hasSuffix_(".app") ||
-                   file_name.hasSuffix_(".lproj") ||
-                   file_name.hasSuffix_(".storyboardc")) {
-            continue;
-        } else {
-            var isDirPtr = Memory.alloc(Process.pointerSize);
-            Memory.writePointer(isDirPtr,NULL);
-            defaultManager.fileExistsAtPath_isDirectory_(file_path, isDirPtr);
-            if (Memory.readPointer(isDirPtr) == 1) {
-                loadAllDynamicLibrary(file_path);
-            } else {
-                if (file_name.hasSuffix_(".dylib")) {
-                    var is_loaded = 0;
-                    for (var j = 0; j < modules.length; j++) {
-                        if (modules[j].path.indexOf(file_name) != -1) {
-                            is_loaded = 1;
-                            console.log("[frida-ios-dump]: " + file_name + " has been dlopen.");
-                            break;
-                        }
-                    } 
+    for (let i = 0; i < Math.floor(cryptSize / BUFSIZE); i++) {
+        readFile(foldModule, buffer, BUFSIZE);
+        writeFile(fmodule, buffer, BUFSIZE);
+    }
+    if (cryptSize % BUFSIZE) {
+        readFile(foldModule, buffer, cryptSize % BUFSIZE);
+        writeFile(fmodule, buffer, cryptSize % BUFSIZE);
+    }
 
-                    if (!is_loaded) {
-                        if (dlopen(allocStr(file_path.UTF8String()), 9)) {
-                            console.log("[frida-ios-dump]: dlopen " + file_name + " success. ");
-                        } else {
-                            console.log("[frida-ios-dump]: dlopen " + file_name + " failed. ");
-                        }
-                    }
-                }
-            }
+    closeFile(fmodule);
+    closeFile(foldModule);
+};
+
+// Function to load all dynamic libraries of the application
+const loadAllDynamicLibrary = () => {
+    const appModules = getAllAppModules();
+    appModules.forEach(mod => {
+        const modPath = mod.path;
+        if (modPath.endsWith('.dylib') && !Process.findModuleByName(mod.name)) {
+            dlopenLib(memoryUtils.allocStr(modPath), 1);
         }
-    }
-}
+    });
+};
 
-function handleMessage(message) {
-    modules = getAllAppModules();
-    var app_path = ObjC.classes.NSBundle.mainBundle().bundlePath();
-    loadAllDynamicLibrary(app_path);
-    // start dump
-    modules = getAllAppModules();
-    for (var i = 0; i  < modules.length; i++) {
-        console.log("start dump " + modules[i].path);
-        var result = dumpModule(modules[i].path);
-        send({ dump: result, path: modules[i].path});
+// Handle messages from the client
+const handleMessage = (message) => {
+    if (message.type === 'dump') {
+        const modules = getAllAppModules();
+        loadAllDynamicLibrary();
+        const response = modules.map(mod => {
+            dumpModule(mod.name);
+            return {
+                name: mod.name,
+                base: mod.base.toString(),
+                size: mod.size,
+                path: mod.path,
+            };
+        });
+        send({ type: 'dumpResponse', payload: response });
     }
-    send({app: app_path.toString()});
-    send({done: "ok"});
-    recv(handleMessage);
-}
+};
 
-recv(handleMessage);
+recv(handleMessage).wait();
